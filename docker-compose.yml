@@ -1,0 +1,94 @@
+# WebRAG 基础设施编排：Milvus standalone + 依赖（etcd/minio）+ Redis
+#
+# 用途：D1 起本机共享开发环境。本机 Attu 与本地应用都通过
+#       http://localhost:19530 连接 Milvus；Redis 用于 URL 去重/搜索缓存/限流。
+# 说明：webrag-app 应用容器（Dockerfile）M4 阶段加入，当前应用在本地 uv 环境运行。
+#
+# 使用：
+#   docker compose up -d                       # 启动
+#   docker compose ps                          # 查看健康状态
+#   docker compose down                        # 停止（保留数据卷）
+#   docker compose down -v                     # 停止并清空数据
+#
+# 验收：uv run python scripts/init_milvus.py && uv run uvicorn src.webrag.main:app --reload
+# 版本对齐：Milvus 服务端 v2.4.24 + pymilvus 2.4.x（pyproject.toml），Attu 请装 2.x 版本。
+
+services:
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  minio:
+    container_name: milvus-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"   # MinIO 控制台（排查用，账号 minioadmin/minioadmin）
+      - "9000:9000"
+    volumes:
+      - minio_data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  milvus:
+    container_name: milvus-standalone
+    image: milvusdb/milvus:v2.4.24
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "19530:19530"   # Milvus 主端口：本机 Attu / 应用 / scripts 均连这里
+      - "9091:9091"     # 健康检查与指标
+    depends_on:
+      - etcd
+      - minio
+
+  redis:
+    container_name: webrag-redis
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6379:6379"
+
+volumes:
+  etcd_data:
+  minio_data:
+  milvus_data:
+  redis_data:

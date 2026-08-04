@@ -1,0 +1,32 @@
+# WebRAG 运行配置（环境无关的可调参数）
+# 密钥与连接信息放 .env，不要写在这里
+
+# ---- 生成（LLM 接入 #7） ----
+llm:
+  model: deepseek-chat        # 或 deepseek-reasoner
+  temperature: 0.3
+  max_tokens: 1024
+  timeout_seconds: 60
+
+# ---- 采集（爬虫 #2） ----
+crawler:
+  top_urls: 5                 # 每条 query 抓取的候选网页数
+  request_timeout_seconds: 15
+  request_delay_seconds: 1.0  # 抓取间隔（限速）
+
+# ---- 切块（清洗 #3） ----
+chunker:
+  chunk_size: 512             # 字符，需匹配 BGE-M3 输入上限
+  overlap: 64
+  respect_paragraph: true
+
+# ---- 检索（检索链路 #6） ----
+retriever:
+  top_k: 8
+  enable_rerank: true
+  rerank_top_n: 3
+
+# ---- 服务（后端 #8） ----
+server:
+  host: 0.0.0.0
+  port: 8000

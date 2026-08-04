@@ -1,0 +1,62 @@
+[project]
+name = "webrag"
+version = "0.1.0"
+description = "联网检索增强问答系统（WebRAG）"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    # ---- Web 服务（后端 #8） ----
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    # ---- 向量库：Milvus 客户端（#5）；服务端 v2.4，Attu 2.x，见 docker-compose.yml ----
+    "pymilvus>=2.4,<2.5",
+    # ---- Embedding：BGE-M3 + 重排（#4）；torch 走 CPU 索引，见下方 sources ----
+    "FlagEmbedding>=1.2",
+    "torch>=2.2",
+    # ---- LLM：DeepSeek（#7） ----
+    "openai>=1.30",
+    # ---- 爬虫与清洗（#2 / #3） ----
+    "requests>=2.31",
+    "trafilatura>=1.6",
+    # ---- 缓存 / 限流（Redis） ----
+    "redis>=5.0",
+    # ---- 配置与密钥 ----
+    "PyYAML>=6.0",
+    "python-dotenv>=1.0",
+    # ---- pkg_resources：pymilvus 2.4.x 运行时依赖（setuptools 82 起已移除该模块） ----
+    "setuptools>=77,<82",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "ruff>=0.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/webrag"]
+
+# ===== 依赖源配置（团队统一，避免装慢/装错） =====
+# 默认 PyPI 走清华镜像；torch 系列走 CPU 专用索引（FlagEmbedding 依赖 torch，
+# PyPI 默认源只有 2.5GB+ 的 CUDA 包）。GPU 机器：把 pytorch-cpu 的 url 换成
+# https://download.pytorch.org/whl/cu121 后执行：
+#   uv lock --upgrade-package torch && uv sync
+[[tool.uv.index]]
+name = "pypi-mirror"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://mirror.sjtu.edu.cn/pytorch-wheels/cpu/"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
