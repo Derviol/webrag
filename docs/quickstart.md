@@ -5,7 +5,7 @@
 环境由 **uv** 统一管理（依赖清单 `pyproject.toml` + 版本锁 `uv.lock` + 解释器 `.python-version`，全部随仓库走）。
 
 ```bash
-git clone <repo-url> && cd web-rag
+git clone https://github.com/Derviol/webrag.git && cd web-rag
 
 # ① 安装 uv（每台机器一次）：
 #    Windows: pip install uv
