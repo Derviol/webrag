@@ -9,9 +9,11 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     # ---- 向量库：Milvus 客户端（#5）；服务端 v2.4，Attu 2.x，见 docker-compose.yml ----
     "pymilvus>=2.4,<2.5",
-    # ---- Embedding：BGE-M3 + 重排（#4）；torch 走 CPU 索引，见下方 sources ----
+    # ---- Embedding：BGE-M3 + 重排（#4）；torch 随 uv 统一管理（CPU-only，见依赖源配置注释） ----
     "FlagEmbedding>=1.2",
-    "torch>=2.2",
+    # torch 固定 2.2-2.6 段：阿里云 CPU 源 find-links 提供 2.6.0+cpu，本地版本优先于 PyPI 的 2.6.0
+    # （win/linux 解析 CPU 版；macOS 无 +cpu wheel 自然回落 PyPI CPU 版）
+    "torch>=2.2,<2.7",
     # ---- LLM：DeepSeek（#7） ----
     "openai>=1.30",
     # ---- 爬虫与清洗（#2 / #3） ----
@@ -19,6 +21,12 @@ dependencies = [
     "trafilatura>=1.6",
     # ---- 缓存 / 限流（Redis） ----
     "redis>=5.0",
+    # ---- 管理后台（离线知识入库）：MySQL 驱动 + JWT 登录（均纯 Python） ----
+    "pymysql>=1.1",
+    "PyJWT>=2.8",
+    "python-multipart>=0.0.9",  # FastAPI Form/File 解析（管理后台文件上传）
+    # ---- 查询改写：jieba 中文分词（三级级联第一级 BM25 首筛用） ----
+    "jieba>=0.42",
     # ---- 配置与密钥 ----
     "PyYAML>=6.0",
     "python-dotenv>=1.0",
@@ -42,21 +50,43 @@ build-backend = "hatchling.build"
 packages = ["src/webrag"]
 
 # ===== 依赖源配置（团队统一，避免装慢/装错） =====
-# 默认 PyPI 走清华镜像；torch 系列走 CPU 专用索引（FlagEmbedding 依赖 torch，
-# PyPI 默认源只有 2.5GB+ 的 CUDA 包）。GPU 机器：把 pytorch-cpu 的 url 换成
-# https://download.pytorch.org/whl/cu121 后执行：
-#   uv lock --upgrade-package torch && uv sync
+# 默认 PyPI 走清华镜像。
+# torch 随 uv 统一管理（CPU-only）：阿里云 pytorch-wheels CPU 源是扁平 wheelhouse
+# （非 PEP 503 每包一页的索引），只能以 find-links 挂载；torch>=2.2,<2.7 下
+# 2.6.0+cpu（本地版本）> PyPI 2.6.0，win/linux 解析到 CPU 版，macOS 回落 PyPI CPU 版。
+# uv sync 一把装齐，无需 --inexact。
+# CPU 瘦身：torch 的 Linux/win CPU wheel 元数据仍声明 triton + nvidia-*（~2GB）——
+# 纯 CPU 推理用不到这些库，用 exclude-dependencies 从解析图剔除（该机制本用于
+# 拦截传递依赖；被排除后 uv 自动丢弃对应依赖边）。uv.lock 不再含它们，
+# Docker 构建不再下载/装入，镜像 ~1GB（未剔除 ~2.5GB）。
+[tool.uv]
+find-links = ["https://mirrors.aliyun.com/pytorch-wheels/cpu/"]
+exclude-dependencies = [
+    "nvidia-cublas-cu12",
+    "nvidia-cuda-cupti-cu12",
+    "nvidia-cuda-nvrtc-cu12",
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cufft-cu12",
+    "nvidia-curand-cu12",
+    "nvidia-cusolver-cu12",
+    "nvidia-cusparse-cu12",
+    "nvidia-cusparselt-cu12",
+    "nvidia-nccl-cu12",
+    "nvidia-nvjitlink-cu12",
+    "nvidia-nvtx-cu12",
+    "triton",
+]
+
 [[tool.uv.index]]
 name = "pypi-mirror"
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
 
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://mirror.sjtu.edu.cn/pytorch-wheels/cpu/"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-torchvision = { index = "pytorch-cpu" }
-torchaudio = { index = "pytorch-cpu" }
+# ===== Lint（团队约定：ruff check 全绿才算完成） =====
+[tool.ruff.lint]
+# 基础设施代码刻意宽捕获并降级（Milvus / Redis / 模型 / robots 不可用时优雅降级，不阻断主链路）
+ignore = [
+    "BLE001",  # 宽 except Exception：失败隔离策略的一部分
+    "S110",    # try-except-pass：可选的清理/探活逻辑
+]

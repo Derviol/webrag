@@ -14,4 +14,4 @@
 ## 约定
 
 - 使用 pytest；网络请求（搜索、DeepSeek、Milvus）用 mock/fixture；
-- 每次变更在 PR 中说明测试影响；合入 dev 前本机 `uv run pytest` 全绿；CI 接入可选（M4）。
+- 每次变更在 docs/CHANGELOG.md 说明测试影响；无 CI，变更人本机 `uv run pytest` 全绿后再视为完成（保存即同步）。

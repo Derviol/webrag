@@ -1,0 +1,226 @@
+[
+  {
+    "id": "fact_001",
+    "question": "什么是 RAG 检索增强生成？",
+    "expected_keywords": ["检索", "生成", "大语言模型", "知识库"],
+    "expected_sources": ["wikipedia", "zhihu", "csdn"],
+    "type": "fact_lookup"
+  },
+  {
+    "id": "fact_002",
+    "question": "Transformer 模型中的自注意力机制是什么？",
+    "expected_keywords": ["Query", "Key", "Value", "注意力", "权重"],
+    "expected_sources": ["wikipedia", "arxiv", "paperswithcode"],
+    "type": "fact_lookup"
+  },
+  {
+    "id": "fact_003",
+    "question": "Python GIL 是什么？有什么影响？",
+    "expected_keywords": ["全局解释器锁", "多线程", "CPU密集"],
+    "expected_sources": ["python.org", "docs.python"],
+    "type": "fact_lookup"
+  },
+  {
+    "id": "fact_004",
+    "question": "HTTP 状态码 301 和 302 的区别是什么？",
+    "expected_keywords": ["永久", "临时", "重定向", "搜索引擎"],
+    "expected_sources": ["developer.mozilla", "w3.org", "ietf"],
+    "type": "comparison"
+  },
+  {
+    "id": "fact_005",
+    "question": "Docker 容器和虚拟机的区别",
+    "expected_keywords": ["内核", "共享", "隔离", "轻量", "启动速度"],
+    "expected_sources": ["docker.com", "redhat", "zhihu"],
+    "type": "comparison"
+  },
+  {
+    "id": "fact_006",
+    "question": "什么是向量数据库？Milvus 有什么特点？",
+    "expected_keywords": ["向量", "embedding", "相似度", "索引", "ANN"],
+    "expected_sources": ["milvus", "zilliz"],
+    "type": "fact_lookup"
+  },
+  {
+    "id": "howto_001",
+    "question": "如何在 Linux 上安装 Docker？",
+    "expected_keywords": ["apt", "yum", "安装", "docker", "sudo"],
+    "expected_sources": ["docker.com", "docs.docker"],
+    "type": "how_to"
+  },
+  {
+    "id": "howto_002",
+    "question": "Python 虚拟环境怎么创建和使用？",
+    "expected_keywords": ["venv", "python", "虚拟环境", "pip"],
+    "expected_sources": ["python.org", "docs.python"],
+    "type": "how_to"
+  },
+  {
+    "id": "howto_003",
+    "question": "Git 分支合并冲突怎么解决？",
+    "expected_keywords": ["merge", "conflict", "冲突", "解决", "git"],
+    "expected_sources": ["git-scm.com", "github"],
+    "type": "how_to"
+  },
+  {
+    "id": "howto_004",
+    "question": "Nginx 反向代理怎么配置？",
+    "expected_keywords": ["proxy_pass", "location", "server", "配置"],
+    "expected_sources": ["nginx.com", "nginx.org"],
+    "type": "how_to"
+  },
+  {
+    "id": "howto_005",
+    "question": "MySQL 数据库如何备份和恢复？",
+    "expected_keywords": ["mysqldump", "备份", "恢复", "数据库"],
+    "expected_sources": ["mysql.com", "dev.mysql"],
+    "type": "how_to"
+  },
+  {
+    "id": "howto_006",
+    "question": "FastAPI 怎么处理文件上传？",
+    "expected_keywords": ["UploadFile", "File", "fastapi", "上传"],
+    "expected_sources": ["fastapi.tiangolo.com"],
+    "type": "how_to"
+  },
+  {
+    "id": "news_001",
+    "question": "最近 AI 大模型领域有哪些重要进展？",
+    "expected_keywords": ["模型", "发布", "开源"],
+    "expected_sources": [],
+    "type": "news"
+  },
+  {
+    "id": "news_002",
+    "question": "2026 年上半年科技行业有哪些重大事件？",
+    "expected_keywords": ["2026", "科技", "AI"],
+    "expected_sources": [],
+    "type": "news"
+  },
+  {
+    "id": "news_003",
+    "question": "最新的 Python 版本有哪些新特性？",
+    "expected_keywords": ["Python", "版本", "新特性", "PEP"],
+    "expected_sources": ["python.org"],
+    "type": "news"
+  },
+  {
+    "id": "news_004",
+    "question": "近期有哪些重要的网络安全事件？",
+    "expected_keywords": ["漏洞", "安全", "攻击", "披露"],
+    "expected_sources": [],
+    "type": "news"
+  },
+  {
+    "id": "news_005",
+    "question": "开源社区最近有什么热门项目？",
+    "expected_keywords": ["GitHub", "开源", "star", "项目"],
+    "expected_sources": ["github.com"],
+    "type": "news"
+  },
+  {
+    "id": "news_006",
+    "question": "2026 年芯片行业有什么新动向？",
+    "expected_keywords": ["芯片", "半导体", "制程"],
+    "expected_sources": [],
+    "type": "news"
+  },
+  {
+    "id": "compare_001",
+    "question": "Redis 和 Memcached 有什么区别？",
+    "expected_keywords": ["持久化", "数据结构", "单线程", "内存"],
+    "expected_sources": ["redis.io", "memcached.org"],
+    "type": "comparison"
+  },
+  {
+    "id": "compare_002",
+    "question": "REST API 和 GraphQL 的优缺点对比",
+    "expected_keywords": ["端点", "查询", "过度获取", "单一"],
+    "expected_sources": ["graphql.org", "restfulapi.net"],
+    "type": "comparison"
+  },
+  {
+    "id": "compare_003",
+    "question": "MySQL 和 PostgreSQL 哪个更适合我的项目？",
+    "expected_keywords": ["事务", "JSON", "扩展", "性能", "复制"],
+    "expected_sources": ["mysql.com", "postgresql.org"],
+    "type": "comparison"
+  },
+  {
+    "id": "compare_004",
+    "question": "React 和 Vue.js 框架对比分析",
+    "expected_keywords": ["虚拟DOM", "组件", "生态", "学习曲线"],
+    "expected_sources": ["react.dev", "vuejs.org"],
+    "type": "comparison"
+  },
+  {
+    "id": "compare_005",
+    "question": "微服务架构和单体架构各有什么优劣？",
+    "expected_keywords": ["部署", "扩展", "复杂度", "通信"],
+    "expected_sources": ["martinfowler.com", "microservices.io"],
+    "type": "comparison"
+  },
+  {
+    "id": "compare_006",
+    "question": "Kubernetes 和 Docker Swarm 的对比",
+    "expected_keywords": ["编排", "扩展", "自动", "容器", "集群"],
+    "expected_sources": ["kubernetes.io", "docs.docker.com"],
+    "type": "comparison"
+  },
+  {
+    "id": "opinion_001",
+    "question": "做个人项目选 Python 还是 Go 语言？",
+    "expected_keywords": ["开发速度", "性能", "类型", "并发"],
+    "expected_sources": [],
+    "type": "opinion"
+  },
+  {
+    "id": "opinion_002",
+    "question": "2026 年前端开发该学什么框架？",
+    "expected_keywords": ["React", "Vue", "Next.js", "趋势"],
+    "expected_sources": [],
+    "type": "opinion"
+  },
+  {
+    "id": "opinion_003",
+    "question": "自建服务器还是用云服务好？",
+    "expected_keywords": ["成本", "维护", "弹性", "安全"],
+    "expected_sources": [],
+    "type": "opinion"
+  },
+  {
+    "id": "opinion_004",
+    "question": "代码审查的最佳实践有哪些？",
+    "expected_keywords": ["review", "代码质量", "规范", "团队"],
+    "expected_sources": ["github.com", "google.github.io"],
+    "type": "opinion"
+  },
+  {
+    "id": "opinion_005",
+    "question": "敏捷开发和瀑布开发哪个好？",
+    "expected_keywords": ["迭代", "需求", "变更", "交付"],
+    "expected_sources": [],
+    "type": "opinion"
+  },
+  {
+    "id": "opinion_006",
+    "question": "推荐几个好用的 Python 调试工具",
+    "expected_keywords": ["pdb", "debug", "断点", "调试"],
+    "expected_sources": [],
+    "type": "opinion"
+  },
+  {
+    "id": "edge_001",
+    "question": "一个非常短的问句",
+    "expected_keywords": [],
+    "expected_sources": [],
+    "type": "fact_lookup"
+  },
+  {
+    "id": "edge_002",
+    "question": "为什么天空是蓝色的？",
+    "expected_keywords": ["散射", "波长", "瑞利"],
+    "expected_sources": [],
+    "type": "fact_lookup"
+  }
+]

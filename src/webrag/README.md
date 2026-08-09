@@ -14,6 +14,7 @@
 ## 关键交付物
 
 - main.py：应用入口与路由；
+- logger/：结构化日志系统（JSONL + 请求级指标：耗时/命中率/token/首token，见 docs/logging.md）；
 - 请求/响应的组装与错误码约定；
 - OpenAPI 自动文档（FastAPI 自带）。
 

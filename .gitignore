@@ -25,6 +25,7 @@ build/
 
 # ---- 工具临时目录 ----
 .reasonix/
+.workbuddy/
 
 # ---- IDE / 系统 ----
 .idea/

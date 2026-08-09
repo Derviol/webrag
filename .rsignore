@@ -1,0 +1,46 @@
+# Resilio Sync 忽略清单（与 .gitignore 对齐，另加垃圾文件）
+# 注意：models/ 不入 git 但必须走 Resilio 同步（团队共享模型文件），故此处不忽略
+
+# ---- 密钥与环境 ----
+.env
+*.env.local
+
+# ---- Python 缓存 ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- 数据与日志（data/ 由 ingest 生成，不入同步） ----
+data/
+logs/
+*.log
+
+# ---- 构建产物 ----
+dist/
+build/
+
+# ---- 工具临时目录 ----
+.reasonix/
+.workbuddy/
+
+# ---- 垃圾 / 临时文件 ----
+删除.txt
+新建 文本文档.txt
+看我，不看我的是傻逼.txt
+Thumbs.db
+*.tmp
+*.bak
+*.orig
+*.rej
+~$*
+desktop.ini
+
+# ---- IDE / 系统 ----
+.idea/
+.vscode/
+*.swp
+.DS_Store

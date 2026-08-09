@@ -3,9 +3,8 @@
 ## 职责
 
 - 独立可运行的开发/运维脚本，不依赖服务启动：
-  - init_milvus.py：创建 collection 与索引（向量库 #5）；
-  - test_query.py：命令行单测一条问题（检索 #6 / 测试 #9）；
-  - ingest.py：预建知识库批量抓取入库（爬虫 #2 + 向量库 #5 协作）。
+  - init_milvus.py：创建问答缓存 collection（webrag_qa）与索引（向量库 #5）；
+  - test_query.py：命令行单测一条问题（检索 #6 / 测试 #9）。
 
 ## 约定
 

@@ -17,5 +17,5 @@
 
 ## 验收标准
 
-- [ ] 块内语义完整（不拦腰切断句子）；
-- [ ] 参数（size / overlap）可在 config 中调整，随评测迭代。
+- [x] 块内语义完整（不拦腰切断句子）：中文标点直接切；英文句点仅在后跟空白/行尾时切，不拆坏小数与版本号（tests/test_chunker.py）；
+- [x] 参数（size / overlap / respect_paragraph）可在 config 中调整，随评测迭代。

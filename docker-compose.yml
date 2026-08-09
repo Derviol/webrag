@@ -1,22 +1,25 @@
-# WebRAG 基础设施编排：Milvus standalone + 依赖（etcd/minio）+ Redis
+# WebRAG 基础设施编排：Milvus standalone + 依赖（etcd/minio）+ Redis + MySQL（管理后台）+ 应用容器（webrag-app）
 #
-# 用途：D1 起本机共享开发环境。本机 Attu 与本地应用都通过
-#       http://localhost:19530 连接 Milvus；Redis 用于 URL 去重/搜索缓存/限流。
-# 说明：webrag-app 应用容器（Dockerfile）M4 阶段加入，当前应用在本地 uv 环境运行。
+# 用途：`docker compose up -d` 一键启动全部服务（基础设施 + 应用 + 自动建库）。
+#       webrag-app 容器内通过 compose 服务名连 Milvus/Redis/MySQL（environment 覆盖）；
+#       本机 Attu 与本地 uv 应用仍通过 http://localhost:19530 连接 Milvus。
 #
 # 使用：
-#   docker compose up -d                       # 启动
-#   docker compose ps                          # 查看健康状态
+#   docker compose up -d                       # 一键启动（首次构建应用镜像约 5-15 分钟）
+#   docker compose ps                          # 查看健康状态（webrag-app 应 healthy，init 应 Exited 0）
+#   docker compose logs init                   # 查看建库结果
 #   docker compose down                        # 停止（保留数据卷）
 #   docker compose down -v                     # 停止并清空数据
 #
-# 验收：uv run python scripts/init_milvus.py && uv run uvicorn src.webrag.main:app --reload
+# 验收：curl http://localhost:8000/health → {"status":"ok","milvus":true,"embed_model":true}
 # 版本对齐：Milvus 服务端 v2.4.24 + pymilvus 2.4.x（pyproject.toml），Attu 请装 2.x 版本。
+# MySQL：管理后台（离线知识入库）账号与文档记录；首次建管理员见 docs/deploy.md（init_admin.py）。
 
 services:
   etcd:
     container_name: milvus-etcd
     image: quay.io/coreos/etcd:v3.5.5
+    restart: unless-stopped
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
       - ETCD_AUTO_COMPACTION_RETENTION=1000
@@ -34,6 +37,7 @@ services:
   minio:
     container_name: milvus-minio
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    restart: unless-stopped
     environment:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
@@ -52,6 +56,7 @@ services:
   milvus:
     container_name: milvus-standalone
     image: milvusdb/milvus:v2.4.24
+    restart: unless-stopped
     command: ["milvus", "run", "standalone"]
     security_opt:
       - seccomp:unconfined
@@ -76,6 +81,7 @@ services:
   redis:
     container_name: webrag-redis
     image: redis:7-alpine
+    restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
@@ -85,10 +91,82 @@ services:
       timeout: 5s
       retries: 5
     ports:
-      - "6379:6379"
+      # 宿主 6379 被本机原生 Redis 占用 → 映射 6380；容器内应用走服务名 redis:6379，不受影响
+      - "6379"
+
+  # 管理后台数据库（离线知识入库）：管理员账号 + 文档记录。
+  # 与应用一起随 compose 启动；webrag-app 容器内用服务名 mysql:3306 连接。
+  # 首次建管理员：docker compose exec webrag-app uv run --no-sync python scripts/init_admin.py
+  mysql:
+    container_name: webrag-mysql
+    image: mysql:8.0
+    restart: unless-stopped
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-webrag_root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-webrag_admin}
+      MYSQL_USER: ${MYSQL_USER:-webrag}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-webrag123}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    ports:
+      - "3306:3306"
+
+  # 应用容器（M4 完成：默认随 compose 一起启动；BGE-M3/reranker 模型由 Resilio 分发到
+  # models/ 后挂载，不进镜像）。容器内通过 compose 服务名连 Milvus/Redis（见 environment）。
+  webrag-app:
+    container_name: webrag-app
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      # .env 的 localhost 仅本机直连可用；容器内必须用 compose 服务名
+      MILVUS_URI: http://milvus:19530
+      REDIS_URL: redis://redis:6379
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+    volumes:
+      - ./models:/app/models:ro   # BGE-M3 / reranker（缺目录时 /health 的 embed_model 为 false）
+      - ./logs:/app/logs          # 结构化日志（logs/app.log，JSONL 轮转）持久化到宿主；logs/ 已 gitignore
+      - ./static:/app/static      # 前端静态页（实时同步宿主机，无需重建镜像）
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      milvus:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+
+  # 建库一次性任务：milvus healthy 后自动创建 collection/索引（幂等；容器 Exited(0) 后不再运行）
+  init:
+    container_name: webrag-init
+    build: .
+    restart: "no"
+    env_file: .env
+    environment:
+      MILVUS_URI: http://milvus:19530
+    command: ["uv", "run", "--no-sync", "python", "scripts/init_milvus.py"]
+    depends_on:
+      milvus:
+        condition: service_healthy
 
 volumes:
   etcd_data:
   minio_data:
   milvus_data:
   redis_data:
+  mysql_data:

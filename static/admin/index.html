@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="WebRAG 管理后台 —— 离线知识文档上传 / 粘贴入库">
+  <title>WebRAG 管理后台 · 离线知识入库</title>
+  <style>
+    :root {
+      --primary: #2f6fed;
+      --primary-dark: #1f56c8;
+      --danger: #d33;
+      --ok: #1a9e4b;
+      --bg: #f4f6fa;
+      --card: #fff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e3e8f0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 60px; }
+    header.top {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border);
+    }
+    header.top h1 { font-size: 20px; }
+    header.top .sub { color: var(--muted); font-size: 13px; }
+    .user-box { font-size: 13px; color: var(--muted); display: flex; gap: 10px; align-items: center; }
+    button {
+      border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer;
+      font-size: 14px; background: var(--primary); color: #fff;
+    }
+    button:hover { background: var(--primary-dark); }
+    button.ghost { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+    button.ghost:hover { background: rgba(47,111,237,.08); }
+    button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+    button.danger:hover { background: rgba(221,51,51,.08); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 20px; margin-bottom: 20px;
+    }
+    .card h2 { font-size: 15px; margin-bottom: 14px; color: var(--text); }
+    label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+    input[type=text], input[type=password], textarea {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 14px; font-family: inherit; background: #fbfcfe;
+    }
+    input[type=text]:focus, input[type=password]:focus, textarea:focus {
+      outline: 2px solid rgba(47,111,237,.35); border-color: var(--primary);
+    }
+    textarea { min-height: 130px; resize: vertical; }
+    .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 220px; }
+    .row .btn-col { flex: 0 0 auto; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    #banner {
+      display: none; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px;
+      font-size: 13px; border: 1px solid transparent;
+    }
+    #banner.error { display: block; background: #fdecec; color: #a22; border-color: #f3c1c1; }
+    #banner.info { display: block; background: #e8f3ff; color: #1f56c8; border-color: #bcd8ff; }
+    /* 登录 */
+    .login-card { max-width: 380px; margin: 9vh auto 0; }
+    .login-card h1 { text-align: center; margin-bottom: 4px; }
+    .login-card .sub { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+    .login-card button { width: 100%; margin-top: 16px; }
+    /* 表格 */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+    td.title-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .dot.processing { background: #f5a623; animation: pulse 1s infinite; }
+    .dot.done { background: var(--ok); }
+    .dot.failed { background: var(--danger); }
+    @keyframes pulse { 50% { opacity: .35; } }
+    .err-msg { color: var(--danger); font-size: 12px; max-width: 260px; }
+    .ops { display: flex; gap: 8px; white-space: nowrap; }
+    .empty { color: var(--muted); text-align: center; padding: 26px 0; font-size: 13px; }
+    .meta { font-size: 12px; color: var(--muted); margin-top: 12px; }
+    /* 详情 */
+    #detail-panel pre {
+      background: #f7f9fc; border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px; font-size: 13px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    }
+    #detail-panel .dl { display: grid; grid-template-columns: 90px 1fr; row-gap: 6px; font-size: 13px; margin-bottom: 12px; }
+    #detail-panel .dl dt { color: var(--muted); }
+    #detail-panel .dl dd { word-break: break-all; }
+    .hidden { display: none !important; }
+    .progress-note { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- 登录视图 -->
+    <section id="login-view" class="card login-card hidden">
+      <h1>🔐 WebRAG 管理后台</h1>
+      <p class="sub">离线知识文档入库</p>
+      <form id="login-form" novalidate>
+        <label for="login-username">用户名</label>
+        <input id="login-username" type="text" autocomplete="username" maxlength="64" required>
+        <label for="login-password">密码</label>
+        <input id="login-password" type="password" autocomplete="current-password" maxlength="128" required>
+        <button type="submit" id="login-btn">登 录</button>
+        <div id="login-error" class="err-msg" style="display:none; margin-top:10px;"></div>
+      </form>
+    </section>
+
+    <!-- 无权限视图（非管理员用户组访问后台时拦截） -->
+    <section id="blocked-view" class="card login-card hidden">
+      <h1 style="text-align:center;">⛔ 无权限访问</h1>
+      <p class="sub">后台管理仅管理员可访问</p>
+      <div style="text-align:center; font-size:13px; color: var(--muted); margin: 8px 0 4px;">
+        当前登录账号不属于管理员用户组，无法进入后台管理。
+      </div>
+      <button type="button" onclick="location.href='/'">返回首页</button>
+      <div style="text-align:center; margin-top: 12px;">
+        <button class="ghost" type="button" id="blocked-logout">切换账号</button>
+      </div>
+    </section>
+
+    <!-- 主视图 -->
+    <section id="app-view" class="hidden">
+      <header class="top">
+        <div>
+          <h1>📚 离线知识入库</h1>
+          <p class="sub">上传或粘贴知识文档，系统自动解析、切块、嵌入并写入离线知识库</p>
+        </div>
+        <div class="user-box">
+          <span id="cur-user"></span>
+          <button class="ghost" id="logout-btn" type="button">退出登录</button>
+        </div>
+      </header>
+
+      <div id="banner" role="alert"></div>
+
+      <!-- 文件上传 -->
+      <div class="card">
+        <h2>上传文件（.txt / .md / .html）</h2>
+        <div class="row">
+          <div>
+            <label for="up-file">文件</label>
+            <input id="up-file" type="file" accept=".txt,.md,.markdown,.html,.htm">
+            <p class="hint">大小上限 10MB；HTML 自动提取正文，Markdown/纯文本原文入库</p>
+          </div>
+          <div>
+            <label for="up-title">标题（可选，默认取文件名）</label>
+            <input id="up-title" type="text" maxlength="512" placeholder="文档标题">
+          </div>
+          <div class="btn-col">
+            <button type="button" id="up-btn">上传并入库</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 粘贴文本 -->
+      <div class="card">
+        <h2>粘贴文本</h2>
+        <div class="row">
+          <div>
+            <label for="txt-title">标题（可选，默认取正文开头）</label>
+            <input id="txt-title" type="text" maxlength="512" placeholder="文档标题">
+          </div>
+          <div class="btn-col">
+            <button type="button" id="txt-btn">入库</button>
+          </div>
+        </div>
+        <label for="txt-content">内容（单篇上限 30 万字符）</label>
+        <textarea id="txt-content" placeholder="粘贴知识文档正文…"></textarea>
+        <div class="progress-note" id="ingest-note"></div>
+      </div>
+
+      <!-- 文档列表 -->
+      <div class="card">
+        <h2>已入库文档 <span id="doc-total" class="meta" style="margin-top:0;"></span></h2>
+        <div id="list-body">
+          <div class="empty">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 详情面板 -->
+      <div class="card hidden" id="detail-panel"></div>
+    </section>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>

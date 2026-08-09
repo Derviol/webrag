@@ -1,0 +1,11 @@
+
+
+docker compose up -d --build webrag-app
+docker compose up -d --build
+# 1. 构建镜像 + 启动全部服务（首次构建约 5-15 分钟）
+docker compose up -d
+
+# 2. 查看各服务状态（milvus 标 healthy、init 标 Exited 0 即成功）
+docker compose ps
+
+docker compose down              # 停止（保留数据）

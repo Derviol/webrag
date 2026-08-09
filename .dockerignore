@@ -1,0 +1,15 @@
+# 构建上下文排除：体积 / 机器特定 / 缓存
+.venv/
+models/
+data/
+logs/
+__pycache__/
+*.pyc
+.reasonix/
+.idea/
+.vscode/
+tests/
+eval/
+docs/
+*.md
+.env

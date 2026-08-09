@@ -3,9 +3,9 @@
 
 # ---- 生成（LLM 接入 #7） ----
 llm:
-  model: deepseek-chat        # 或 deepseek-reasoner
+  model: deepseek-v4-flash   # 或 deepseek-reasoner
   temperature: 0.3
-  max_tokens: 1024
+  max_tokens: 2048             # 单次回答上限：1024 偏短，调大让回答更详尽
   timeout_seconds: 60
 
 # ---- 采集（爬虫 #2） ----
@@ -19,14 +19,76 @@ chunker:
   chunk_size: 512             # 字符，需匹配 BGE-M3 输入上限
   overlap: 64
   respect_paragraph: true
+  # 小→大（Small-to-Big）两级粒度（P0 优化）
+  enable_two_level: false      # 启用后：256 字符小块检索 + 1024 字符大块送 LLM（需配合 query_rewriter）
+  child_chunk_size: 256
+  parent_chunk_size: 1024
+
+# ---- 查询改写（P0 优化） ----
+query_rewriter:
+  enable: true                 # 总开关：关闭后跳过全部 Query 预处理
+  enable_intent: true          # 意图分类（规则 + LLM 兜底）
+  enable_multi_rewrite: true   # 多路改写（关键词/正式/子问题）
+  enable_hyde: true            # HyDE 草稿（生成假设文档用于检索）
+  # 追问检测与改写（多轮对话补全）：判定当前问题是否依赖历史消息（追问），
+  # 若是则改写为自包含完整问题后再走检索与生成（请求需携带 history 字段）
+  enable_followup: true        # 追问检测与改写总开关
+  followup_max_history: 6      # 历史上下文最多携带的消息条数（取最近 N 条）
+  followup_max_chars: 3000     # 历史文本总长上限（字符，超出截断较早轮次）
 
 # ---- 检索（检索链路 #6） ----
 retriever:
-  top_k: 8
+  top_k: 10                    # 检索候选数（重排输入）：8→10，保证重排后能凑满 5 段不重复上下文
   enable_rerank: true
-  rerank_top_n: 3
+  rerank_top_n: 5              # 送 LLM 的片段数：3→5，增加上下文
+  rerank_min_score: 0.6        # 重排后低于此分数的片段剔除（噪声不进 LLM 上下文）
+  enable_llm_direct: true      # 兜底：联网检索为空时 LLM 直答（关闭则返回 EMPTY_RESULT）
+  max_chunks_per_page: 12      # 联网抓取时每页最多块数（CPU-only 嵌入实测 ~1.5s/块，12 块≈18s）
+  max_web_chunks_total: 24      # 联网链路嵌入总块数封顶（5 页×12 块=60 块≈90s 会超时；24 块≈36s）
+  enable_qa_cache: true         # 问答缓存优先：/ask 先查历史相似问题（webrag_qa）
+  qa_min_score: 0.80            # 缓存命中阈值：问题向量余弦 ≥ 此值命中（需评测调参，宁高勿低）
+  qa_top_k: 3                   # 缓存检索候选数（取 top-1 判定命中）
+  # P1: jieba Jaccard 辅助分
+  qa_jaccard_weight: 0.30       # Jaccard 在综合分中的权重（推荐 0.20–0.35）
+  qa_jaccard_min: 0.30          # Jaccard 低于此值的候选不参与辅助评分
+  # P1: 上下文去重
+  enable_context_dedup: true    # 重排后对 LLM 上下文做 Jaccard n-gram 去重
+  dedup_jaccard_threshold: 0.75 # Jaccard 去重阈值（超过视为重复）
+  dedup_ngram_n: 3              # n-gram 大小
+  # P1: 来源质量分层
+  enable_source_quality: true   # 附加来源质量分到排序因子
+
+# ---- 幻觉检测（P1 优化） ----
+hallucination_checker:
+  enable: true                  # 启用幻觉检测：生成后逐句核验
+  enable_auto_rewrite: false     # 检测到幻觉后自动重写（额外LLM调用，默认为手动标记）
 
 # ---- 服务（后端 #8） ----
 server:
   host: 0.0.0.0
   port: 8000
+  ask_timeout_seconds: 105     # /ask 整体预算：超时返回 TIMEOUT，避免请求挂死（前端超时 200s 兜底）
+
+# ---- 评测与反馈闭环（P2 优化） ----
+eval:
+  enable_feedback: true         # 开启在线反馈收集（POST /feedback + GET /feedback/stats）
+  feedback_log_path: "logs/feedback.jsonl"
+
+# ---- 管理后台（离线知识入库） ----
+# 密钥与连接信息（MYSQL_* / ADMIN_JWT_SECRET / MILVUS_OFFLINE_COLLECTION）放 .env，不写在这里
+admin:
+  token_ttl_seconds: 43200      # 登录 token 有效期（12h）
+  max_file_bytes: 10485760      # 上传文件大小上限（10MB，超限返回 VALIDATION_ERROR）
+  max_chars_per_doc: 300000     # 单文档字符上限（≈600 块，CPU 嵌入约 15min；超限拒绝入库）
+  # 切块参数复用 chunker 段（chunk_size / overlap / respect_paragraph），保证离线库与问答链路粒度一致
+
+# ---- 结构化日志（src/webrag/logger；事件 schema 见 docs/logging.md） ----
+logging:
+  level: INFO             # DEBUG / INFO / WARNING / ERROR
+  log_dir: logs           # 日志目录（相对项目根；logs/ 已 gitignore，Docker 挂宿主卷持久化）
+  file_name: app.log      # 主日志文件名（JSONL：每行一条 JSON 事件）
+  max_bytes: 10485760     # 单文件 10MB，超出自动轮转（app.log.1 / .2 / …）
+  backup_count: 5         # 保留的轮转文件数
+  console: true           # 同时输出控制台（Docker stdout：docker compose logs webrag-app）
+  console_json: false     # 控制台也输出 JSON（true 便于容器日志采集端解析；false 为可读文本）
+  stats_interval: 50      # 每 N 个请求输出一条 stats.periodic 聚合事件（缓存命中率/耗时/token）

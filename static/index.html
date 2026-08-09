@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="WebRAG 联网检索增强问答 —— 检索真实网页后生成回答，每个 [n] 引用都可点击溯源">
+  <meta name="theme-color" content="#1666FF">
+  <title>WebRAG 智能问答</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231666FF'/><text x='16' y='23' font-size='18' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>W</text></svg>">
+
+  <!-- ===== All libraries vendored locally (no CDN dependency) ===== -->
+  <script src="/vendor/react.production.min.js"></script>
+  <script src="/vendor/react-dom.production.min.js"></script>
+  <script src="/vendor/dayjs.min.js"></script>
+  <script src="/vendor/antd.min.js"></script>
+  <script src="/vendor/purify.min.js"></script>
+  <script src="/vendor/marked.min.js"></script>
+
+  <!-- ===== Inline styles for loading & error screens ===== -->
+  <style>
+    #app-loading {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: #f5f6f7;
+      z-index: 9999;
+    }
+    #app-loading .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #d0d5dd;
+      border-top-color: #1666FF;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    #app-loading p {
+      margin-top: 16px;
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 14px; color: #667085;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #app-error {
+      display: none;
+      position: fixed; inset: 0;
+      align-items: center; justify-content: center;
+      background: #f5f6f7;
+      z-index: 10000;
+    }
+    #app-error .err-card {
+      max-width: 420px;
+      padding: 32px 28px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      text-align: center;
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    #app-error .err-icon {
+      width: 48px; height: 48px;
+      margin: 0 auto 16px;
+      border-radius: 50%;
+      background: #fef0f0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px; color: #f56565;
+    }
+    #app-error h3 {
+      font-size: 16px; font-weight: 600;
+      color: #1a1a2e; margin: 0 0 8px;
+    }
+    #app-error p {
+      font-size: 13px; color: #667085;
+      line-height: 1.6; margin: 0 0 20px;
+    }
+    #app-error .err-detail {
+      font-size: 12px; color: #98a2b3;
+      background: #f9fafb; border-radius: 6px;
+      padding: 8px 12px; margin: 0 0 20px;
+      font-family: "Cascadia Code", Consolas, monospace;
+      text-align: left; word-break: break-all;
+    }
+    #app-error button {
+      padding: 8px 24px;
+      background: #1666FF; color: #fff;
+      border: none; border-radius: 6px;
+      font-size: 14px; cursor: pointer;
+      font-family: inherit;
+    }
+    #app-error button:hover { background: #0d54d9; }
+  </style>
+
+  <!-- ===== Custom styles ===== -->
+  <link rel="stylesheet" href="/css/doubao.css?v=20260808e">
+</head>
+<body>
+  <!-- Loading screen -->
+  <div id="app-loading">
+    <div class="spinner"></div>
+    <p>正在加载 WebRAG…</p>
+  </div>
+
+  <!-- Error screen (shown if scripts fail to load or React crashes) -->
+  <div id="app-error">
+    <div class="err-card">
+      <div class="err-icon">!</div>
+      <h3>页面加载失败</h3>
+      <p id="app-error-msg">前端资源加载异常，请检查网络连接或刷新重试。</p>
+      <div class="err-detail" id="app-error-detail"></div>
+      <button onclick="location.reload()">刷新重试</button>
+    </div>
+  </div>
+
+  <!-- React mount point -->
+  <div id="root"></div>
+
+  <!-- ===== Global error handler (catches runtime errors before React mounts) ===== -->
+  <script>
+    window.addEventListener('error', function(e) {
+      // Only show error screen if loading is still visible (React hasn't mounted)
+      var loading = document.getElementById('app-loading');
+      if (!loading || loading.style.display === 'none') return;
+      // Check if root has real content (not just loading screen)
+      var root = document.getElementById('root');
+      if (root && root.children.length > 1) return; // React mounted
+
+      loading.style.display = 'none';
+      var errEl = document.getElementById('app-error');
+      var msgEl = document.getElementById('app-error-msg');
+      var detEl = document.getElementById('app-error-detail');
+      if (msgEl) msgEl.textContent = 'JavaScript 运行时错误';
+      var detail = e.message || 'Unknown error';
+      if (e.filename) detail += '\n  File: ' + e.filename.split('/').pop();
+      if (e.lineno) detail += '\n  Line: ' + e.lineno + ':' + (e.colno || 0);
+      if (detEl) detEl.textContent = detail;
+      if (errEl) errEl.style.display = 'flex';
+    });
+  </script>
+
+  <!-- ===== Library load verification ===== -->
+  <script>
+    (function() {
+      var required = {
+        'React': typeof window.React !== 'undefined',
+        'ReactDOM': typeof window.ReactDOM !== 'undefined',
+        'antd': typeof window.antd !== 'undefined',
+        'DOMPurify': typeof window.DOMPurify !== 'undefined',
+        'marked': typeof window.marked !== 'undefined',
+      };
+      var missing = Object.keys(required).filter(function(k) { return !required[k]; });
+      if (missing.length) {
+        var el = document.getElementById('app-loading');
+        if (el) el.style.display = 'none';
+        var errEl = document.getElementById('app-error');
+        var msgEl = document.getElementById('app-error-msg');
+        var detEl = document.getElementById('app-error-detail');
+        if (msgEl) msgEl.textContent = '以下依赖库未能加载：' + missing.join(', ');
+        if (detEl) detEl.textContent = '请确认 /vendor/ 目录下文件完整，或检查浏览器控制台获取详细错误。';
+        if (errEl) errEl.style.display = 'flex';
+      }
+    })();
+  </script>
+
+  <!-- ===== Pre-compiled React application (no Babel needed) ===== -->
+  <script src="/js/app.js?v=20260808h"></script>
+
+  <!-- ===== Mount timeout detector ===== -->
+  <script>
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        // If #app-loading is still visible after 12s, something went wrong
+        var loading = document.getElementById('app-loading');
+        var root = document.getElementById('root');
+        if (loading && loading.style.display !== 'none' &&
+            (!root || !root.innerHTML || root.innerHTML.indexOf('app-loading') !== -1)) {
+          var errEl = document.getElementById('app-error');
+          var msgEl = document.getElementById('app-error-msg');
+          var detEl = document.getElementById('app-error-detail');
+          if (msgEl) msgEl.textContent = '页面加载超时（12 秒内未完成渲染）。';
+          if (detEl) detEl.textContent = '请打开浏览器控制台（F12）查看 JavaScript 错误信息，或刷新重试。';
+          if (errEl) errEl.style.display = 'flex';
+        }
+      }, 12000);
+    });
+  </script>
+</body>
+</html>
