@@ -1,6 +1,6 @@
 # 部署文档：Docker 一键部署
 
-> 状态：v2（webrag-app 应用容器 M4 已接入，`docker compose up -d` 一键启动全部服务）。
+> 状态：使用中（`docker compose up -d` 一键启动全部服务：基础设施 + 应用容器 + 自动建库）。
 
 ## 部署架构
 
@@ -16,7 +16,7 @@ milvus-standalone          etcd (元数据)  minio (存储)   redis (去重/限�
 
 - 容器内互连用 **compose 服务名**（`milvus:19530` / `redis:6379` / `mysql:3306`），由 compose 的 `environment` 注入覆盖；
 - 本机 Attu 与本地 uv 应用仍通过 `http://localhost:19530` 直连 Milvus，两者互不干扰；
-- BGE-M3 / reranker 模型（2GB+）不进镜像，由 `./models:/app/models:ro` 挂载（Resilio 分发）。
+- BGE-M3 / reranker 模型（2GB+）不进镜像、不入 git，由 `./models:/app/models:ro` 挂载（模型获取见 quickstart.md §1）。
 
 ## 服务清单
 
@@ -34,7 +34,7 @@ milvus-standalone          etcd (元数据)  minio (存储)   redis (去重/限�
 
 ## 一键启动
 
-前置：`models/` 目录含 BGE-M3 与 reranker（Resilio 分发），`.env` 已填 DeepSeek / 搜索 API Key。
+前置：`models/` 目录含 BGE-M3 与 reranker（不入 git，自行下载放置，见 quickstart.md §1 模型获取），`.env` 已填 DeepSeek / 搜索 API Key。
 
 > 镜像构建说明：**torch 已随 uv 统一管理**——Dockerfile 的 `uv sync --frozen` 按 uv.lock 直接安装 CPU 版 torch（`torch>=2.2,<2.7` 经 `[tool.uv] find-links` 阿里云 CPU 源解析为 `2.6.0+cpu`，约 200MB），**无手动安装步骤**。CPU 瘦身：torch 的 CPU wheel 元数据自带的 triton + nvidia-*（~2GB，纯 CPU 推理用不到）通过 pyproject `[tool.uv] exclude-dependencies` 从解析图剔除，uv.lock 与镜像均不含它们，镜像约 1GB；Dockerfile 内 `import torch` 自检保证剔除不过头（构建期 fail-fast）。
 

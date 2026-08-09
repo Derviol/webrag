@@ -1,6 +1,6 @@
 # WebRAG 接口契约
 
-> 状态：初稿 v0.2 ｜ 权威契约：本文件 ｜ 模块内速览见 schemas/README.md
+> 状态：使用中 ｜ 权威契约：本文件 ｜ 模块内速览见 schemas/README.md
 > 变更流程：字段变更 = 破坏性变更，先同步 llm / retriever / 前端与 schemas/README.md，再改代码。
 
 ## 1. 对外接口（HTTP，FastAPI）
@@ -298,6 +298,6 @@ HTML 经 parser（trafilatura）自动清洗正文；Markdown/纯文本原文入
 
 ## 5. 变更流程
 
-1. 提出方在 docs/CHANGELOG.md 记录变更点与影响模块（无 Git，CHANGELOG 即协作记录）；
+1. 在 docs/CHANGELOG.md 记录变更点与影响模块；
 2. 同步更新本文件与 schemas/README.md；
-3. 联调通过后生效；共享文件改动先与 owner 确认（README §4）；冲突文件（`(conflicted copy)`）及时清理。
+3. 修改代码并跑通测试（`uv run pytest` + `uv run ruff check` 全绿）后提交 Git。

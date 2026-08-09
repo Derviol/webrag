@@ -118,7 +118,7 @@ services:
     ports:
       - "3306:3306"
 
-  # 应用容器（M4 完成：默认随 compose 一起启动；BGE-M3/reranker 模型由 Resilio 分发到
+  # 应用容器（默认随 compose 一起启动；BGE-M3/reranker 模型不入 git，自行放置到
   # models/ 后挂载，不进镜像）。容器内通过 compose 服务名连 Milvus/Redis（见 environment）。
   webrag-app:
     container_name: webrag-app

@@ -1,9 +1,9 @@
-# static — 前端页面（#8 交付）
+# static — 前端页面
 
-> 参考实现：knowforge-rag-platform 的 static/（FastAPI 静态托管 + vanilla JS，无框架）。
-> 交付时同步启用 main.py 中预留的静态挂载（见下）。
+> 原生 JS 实现（无框架，FastAPI 静态托管）：问答页 + 管理后台。
+> 静态目录已由 main.py 挂载（`app.mount("/", StaticFiles(...))`），改完刷新即生效。
 
-## 交付物（D3）
+## 交付物
 
 | 文件 | 内容 |
 | --- | --- |
@@ -19,20 +19,19 @@
 - 失败响应统一 `{"error": {"code", "message"}}`，前端按 code 显示提示（TIMEOUT / LLM_FAILED / EMPTY_RESULT / SEARCH_FAILED / INTERNAL_ERROR）；
 - 渲染规则：answer 中的 [n] 与 sources[].index 一一对应；sources 按 index 排序，title 为链接文本、url 为 href。
 
-## 启用方式（#8 交付后，main.py 去掉注释）
+## 启用方式
 
-```python
-# app.mount("/", StaticFiles(directory="static", html=True), name="static")
-```
+静态目录已在 src/webrag/main.py 中挂载（`app.mount("/", StaticFiles(directory=..., html=True), name="static")`），
+无需额外配置；容器部署时 static/ 以 volume 挂载到 /app/static，宿主机改完刷新即生效。
 
-## 验收标准（#9 协同验收）
+## 验收标准
 
 - [x] 输入问题回车提交，回答区展示 answer（[n] 引用保留）；
 - [x] 来源列表可点击跳转真实 URL，序号与 answer 中 [n] 对应；
 - [x] /ask 失败时按错误码展示提示，页面不白屏；
 - [x] 回答含 `<script>` 等恶意 HTML 时被消毒、不执行。
 
-## 打磨记录（D3）
+## 打磨记录
 
 - 视觉：渐变背景、卡片阴影、引用上标徽标、来源序号圆标、空状态引导、页脚；
 - 交互：示例问题 chips（点击即提交）、加载 spinner + 按钮态切换、完成时显示耗时、成功/失败绿色/红色状态条、自动滚动到回答；

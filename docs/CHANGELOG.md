@@ -1,7 +1,8 @@
-# 变更记录（协作记录）
+# 变更记录
 
-> 协作方式：**Resilio Sync**（成员本地开发 + 主文件夹同步，见 README §4）。
-> 记录影响多人协作的变更与决策（契约定版、环境变更、协作方式调整）。
+> 单人开发 + Git 维护（main/dev，GitHub: Derviol/webrag）。记录开发全过程的变更与决策
+> （契约定版、功能迭代、性能优化、部署收口）。历史条目中的多角色署名（#N / Reasonix）
+> 均为作者本人推进开发时的记录角色，统一由一人完成。
 >
 > 格式：`MM-DD | 变更人 | 变更 | 影响模块 | 备注`
 
@@ -9,6 +10,7 @@
 
 | 日期 | 改动人 | 变更 | 影响模块 | 自测 |
 | --- | --- | --- | --- | --- |
+| 08-08 | Reasonix | **文档体系重构（单人维护 + Git）**：根 README 重写为单人开发 + Git 工作流（去掉 11 人分工 / Resilio 协作 / 里程碑规划）；quickstart 改 git clone 流程；architecture 状态改已交付、删除 4 天排期、补齐功能清单；deploy / api / config / 各模块 README 去除角色归属与协作引用；删除 TEAM_GUIDE.md（团队速览已不适用）；本文件头改为 Git 记录说明 | 全部（文档） | ✅ git 提交推送
 | 08-08 | Reasonix | **追问检测与改写（多轮对话补全）**：① AskRequest 新增可选 history（当前问题之前的消息，{role: user\|assistant, content}，≤40 条），前端 app.jsx/app.js 每次提问携带上一轮完整历史（buildPayload 归一化：滤 loading/streaming、取最近 20 条）；② query_rewriter 新增追问改写（needs_followup_llm 规则预筛：指代/承接词或超短问才调 LLM，其余跳过省调用；LLM 一次调用判定+改写输出 {is_followup, rewritten}；失败/非法响应降级原文）——判定为追问时改写后的自包含完整问题替代原文贯穿 改写管线/缓存检索/本地与联网检索/生成/缓存落库（缓存键也用改写后问题，同义追问可命中）；③ 配置新增 query_rewriter.enable_followup/followup_max_history(6)/followup_max_chars(3000)；④ RequestMetrics 新增 followup 标志（评测追问效果）；⑤ 无 history 或改写失败行为与单轮一致（不阻断）；新增 20 条单测 + 6 条链路集成测试；api.md §1.1/§2/§3/§4、schemas/config README 同步；app.jsx 重编译验证 app.js | schemas / query_rewriter / main / config / logger / static / tests / docs | ✅ ruff / pytest 57 通过 / Babel 编译 / node --check |
 | 08-08 | Reasonix | **登录系统 + 聊天记录 MySQL 化**：① 统一账户表 users（role: user/admin，旧 admin_users 自动迁移为 role=admin，现有管理员不丢）；② 新增 /auth/register ·/auth/login ·/auth/me（JWT 载荷含 role/uid，与后台共用密钥）；③ /ask 与 /ask/stream 强制登录（未登录 401）；④ 聊天记录存 MySQL chat_conversations（uid 归属 + messages JSON），新增 /chat/conversations CRUD（归属校验，删除同步删库）；⑤ 前端左侧会话列表改服务端同步 + 每条 hover 删除按钮；侧边栏底部「管理后台」改「账户」模块（登录/注册/退出），管理员登录后顶部新增「后台管理」入口；⑥ /admin/* 角色校验（非 admin 403）+ GET /admin/auth/me + 控制台前端直访判断用户组（普通用户无权限页）；⑦ init_admin.py 建管理员 role=admin；api.md §1.1/§1.3/§1.4 更新 + 新增 §1.5/§1.6；app.jsx 重编译 app.js | admin / accounts（新）/ chat_routes（新）/ main / config / scripts / static / tests / docs | ✅ ruff / pytest / Babel 编译 |
 

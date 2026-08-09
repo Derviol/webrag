@@ -2,21 +2,23 @@
 
 ## 职责
 
-- 评测集建设：问答对 + 期望来源（人工标注）；
-- 指标计算：检索 Recall@k、MRR；回答质量人工打分（准确性、引用完整性）；
-- 输出阶段性评测报告，驱动检索与 Prompt 迭代。
+- 评测集建设：问答对 + 期望来源（eval/qa_set.json，人工标注）；
+- 指标计算：检索 Recall@k、MRR（run_eval.py）；回答质量人工打分（准确性、引用完整性）；
+- 输出阶段性评测报告（eval/reports/），驱动检索与 Prompt 迭代。
 
-## 所属角色
+## 运行
 
-- 测试 / 评测（#9）建设与执行；
-- 检索链路（#6）配合调优，LLM（#7）配合 Prompt 迭代。
+```bash
+uv run python eval/run_eval.py
+```
 
 ## 交付物
 
-- eval/qa_set.json（规划）：评测数据；
-- eval/report/（规划）：各里程碑评测报告。
+- eval/qa_set.json：评测数据（已建立）；
+- eval/run_eval.py：评测脚本（含 Live 模式：真实 /ask 调用）；
+- eval/reports/baseline.json：基线评测结果。
 
 ## 约定
 
 - 评测集变更在 docs/CHANGELOG.md 记录，标注者记录标注规则；
-- 每次参数/模型调整需复跑基线，结果记录在报告。
+- 每次参数/模型调整需复跑基线，结果记录在 reports/。

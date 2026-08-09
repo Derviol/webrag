@@ -1,234 +1,189 @@
 # WebRAG — 联网检索增强问答系统
 
-> **状态：执行阶段（3-4 天，全量任务）** 架构设计见 docs/architecture.md，接口契约见 docs/api.md；Resilio Sync 协作（§4）与 Docker 部署（§5）已确定。
+> 单人开发完成 ✅ ｜ Git 托管：<https://github.com/Derviol/webrag>（`main` / `dev` 分支）
+> 架构见 [docs/architecture.md](docs/architecture.md)｜接口契约见 [docs/api.md](docs/api.md)｜部署见 [docs/deploy.md](docs/deploy.md)
 
 ## 1. 项目简介
 
 一个**面向联网信息的 RAG（检索增强生成）问答系统**：
 
-- 用户输入自然语言问题；
-- 系统先检索**历史问答缓存**（相似问题直接复用已存摘要 + 来源，秒回）；
-- 未命中时自动检索相关**网页**，抓取并清洗内容，交给大模型生成**带数据源标注**的回答；
-- 每个回答都会附上引用来源（URL），保证可溯源；回答成功后存入问答缓存，越问越快；
-- 当前周期：**3-4 天交付全量功能**，架构与排期见 docs/architecture.md。
+- 用户输入自然语言问题，系统先检索**历史问答缓存**——相似问题直接复用已存摘要 + 来源，秒回；
+- 未命中时按需**联网检索**网页，或检索**离线知识库**（管理后台上传的文档），抓取清洗后交给大模型生成**带数据源标注**的回答；
+- 每个回答附可点击的引用来源（URL），保证可溯源；回答成功后自动存入问答缓存，越问越快；
+- 支持**多轮对话**（追问自动改写为自包含问题）、**SSE 流式输出**、**时效性锚定**（「近日/近期/最新」按客户端时间定位）。
 
-**技术栈**
+### 功能特性
+
+| 特性 | 说明 |
+| --- | --- |
+| 问答缓存 | 向量库 `webrag_qa` 存「问题 → 摘要 + 来源」，相似问题（余弦 ≥ `qa_min_score`）秒回 `cached=true`，不联网、不调 LLM |
+| 联网检索 | 搜索 API（Bing / Tavily / 博查适配层）+ 自研爬虫（限速 / 重试 / robots / Redis URL 去重）；前端开关控制（**opt-in，默认关闭**） |
+| 离线知识库 | 管理后台上传 .txt/.md/.html → parser → chunker → embedder 管线异步入库（`webrag_offline_kb`）；内网 / 隐私场景可完全离线作答 |
+| 多轮对话 | 请求携带 `history` 时自动判定**追问**并改写为自包含完整问题（LLM 判定+改写，失败降级原文）；缓存键用改写后问题，同义追问可命中 |
+| 时效性锚定 | 「近日/近期/今天」等相对时间词以**客户端本地时间**（`client_time`）为基准：搜索词拼入日期、LLM Prompt 注入「时间基准」段 |
+| 混合检索 | BGE-M3 **dense + sparse 双向量** + bge-reranker 精排（噪声剔除 / Jaccard 上下文去重 / 来源质量分层 / 意图动态权重） |
+| 查询改写 | 意图分类 + 多路改写（关键词 / 正式 / 子问题）+ HyDE 草稿，均可独立开关 |
+| 流式输出 | `/ask/stream` SSE：检索进度 `status` 事件 + 生成 `delta` 打字机渲染；**缓存命中同样分块流式输出摘要** |
+| 幻觉检测 | 生成后逐句核验（`hallucination_checker`，可自动重写）；后端引用校验剔除幽灵引用 |
+| 账户与记录 | JWT 账户系统（user / admin，PBKDF2）+ 聊天记录 MySQL 持久化（`/chat/conversations` CRUD）+ 管理后台独立子系统 |
+| 结构化日志 | JSONL `logs/app.log`：请求级指标（分阶段耗时 / 命中率 / token / TTFT）+ 周期性聚合统计 + `GET /logs/stats` |
+| 反馈闭环 | `POST /feedback` 在线反馈收集 + `eval/` 评测集（Recall@k / MRR 基线报告） |
+
+### 技术栈
 
 | 组件 | 选型 |
 | --- | --- |
-| 向量数据库 | Milvus（客户端 pymilvus 已装；最终以 Docker Compose 部署 standalone） |
-| Embedding 模型 | BGE-M3（BAAI/bge-m3，dense + sparse 双向量） |
-| LLM | DeepSeek（deepseek-chat / deepseek-reasoner，OpenAI 兼容接口） |
-| 网页采集 | 搜索引擎 API（Bing / Tavily / 博查）+ 自研爬虫（requests + trafilatura） |
-| 缓存 / 限流 | Redis（URL 去重、API 限流；Docker 与 Milvus 一同部署） |
-| 重排 | bge-reranker-v2-m3 |
-| 服务框架 | Python 3.11（uv 统一管理环境），FastAPI + Web 页面（输入框/回答/来源列表） |
-| 协作与部署 | Resilio Sync 同步 + 成员本地开发（见 §4）；Docker Compose 部署（见 §5） |
-| 评测 | 自建 QA 评测集 + 检索指标（Recall@k、MRR）+ 生成质量人工评估 |
+| 向量数据库 | Milvus v2.4.24（standalone，Docker Compose 编排，客户端 pymilvus 2.4.x） |
+| Embedding 模型 | BGE-M3（dense + sparse 双向量，本地 `models/`） |
+| 重排模型 | bge-reranker（本地 `models/bge-reranker-large`，sentence-transformers CrossEncoder） |
+| LLM | DeepSeek（OpenAI 兼容接口；模型名由 `settings.yaml llm.model` / `.env DEEPSEEK_MODEL` 配置） |
+| 网页采集 | 搜索引擎 API 适配层（Bing / Tavily / 博查）+ 自研爬虫（requests + trafilatura） |
+| 存储 | Redis（URL 去重 / 登录限流）、MySQL 8.0（账户 / 聊天记录 / 后台文档） |
+| 服务框架 | Python 3.11（uv 统一管理环境；容器镜像 3.12-slim）+ FastAPI + 原生 JS 前端 |
+| 开发质量 | pytest（单测 + 集成）+ ruff（lint）+ 结构化日志 |
 
 ## 2. 系统流程
 
 ```text
-用户问题
+用户问题（可选携带 history / client_time / 生成参数）
    │
    ▼
-① 问答缓存检索 ──► 嵌入问题，到 webrag_qa 检索相似历史问题
-   │ 命中（相似度 ≥ qa_min_score）
+① 请求预处理 ──► 追问改写（多轮补全为自包含问题）→ 时效性锚定 → 查询改写（意图/多路/HyDE）
+   │
    ▼
-② 返回已存摘要 + 来源（cached=true，秒回，不联网不调 LLM）
+② 问答缓存检索 ──► 嵌入问题（qvec）→ 检索 webrag_qa 相似历史问题
+   │ 命中（余弦 ≥ qa_min_score）
+   ▼
+③ 秒回：已存摘要 + 来源（cached=true，不联网不调 LLM；/ask/stream 打字机输出）
    │ 未命中
    ▼
-③ 网页检索 ──► 搜索引擎 API / 爬虫抓取候选网页
+④ 本地知识库检索 ──► webrag_offline_kb（dense+sparse 混合，不联网；use_web_search=false 时唯一检索源）
+   │ 结果不足 且 use_web_search=true
    ▼
-④ 清洗切块 ──► HTML 清洗 → 正文提取 → 分块（标题/段落感知）
+⑤ 联网兜底 ──► 搜索 API → 并行抓取（预算封顶）→ 清洗切块 → 嵌入 → 临时库 qa_<id> 混合检索
    ▼
-⑤ 向量化 ──► BGE-M3 生成 dense + sparse 向量 → 临时库检索 → 重排
+⑥ 合并重排 ──► 本地 + 临时库结果统一 bge-reranker 精排（去重 + 噪声剔除）
    ▼
-⑥ 生成 ──► 上下文拼装 → DeepSeek 生成回答（强制输出 [1][2] 引用标记）
+⑦ 生成 ──► 上下文拼装 → DeepSeek 生成（强制输出 [1][2] 引用）→ 幻觉检测 → 引用校验
    ▼
-⑦ 缓存落库 ──► 存储「用户问题 + 摘要 + 来源」入 webrag_qa（best-effort）
+⑧ 缓存落库 ──► 存储「用户问题 + 摘要 + 来源」入 webrag_qa（best-effort）
    ▼
-⑧ 输出 ──► 回答 + 数据源标注列表（URL 去重、按引用序号对应）
+⑨ 输出 ──► 回答 + 数据源标注列表（URL 去重、按引用序号对应；/ask 整包 或 /ask/stream SSE）
 ```
 
-**引用标注机制**：Prompt 中要求模型仅在给定上下文范围内回答，并以 `[序号]` 标注来源；后端将序号映射回 URL 列表随回答一起返回，前端渲染为可点击链接。
+**引用标注机制**：Prompt 中要求模型仅在给定上下文范围内回答，并以 `[序号]` 标注来源；后端将序号映射回 URL 列表随回答一起返回（越界引用剔除，宁可少引用不可错引用），前端渲染为可点击链接。
 
-## 3. 目录结构（计划）
+**降级策略**：`use_web_search=false` 且本地检索为空 → `EMPTY_RESULT`「信息不足」（不走 LLM 直答）；联网开启但检索为空 → LLM 直答兜底（`direct=true`，无来源，不入缓存）。任一下游失败（搜索 / 抓取 / LLM / 缓存写入）均不阻断整体进程，返回对应错误码或降级（见 docs/api.md §1.1）。
+
+## 3. 目录结构
 
 ```text
-web-rag/
-├── README.md
-├── pyproject.toml + uv.lock + .python-version  # 依赖清单 / 版本锁 / 解释器版本（uv 统一管理）
-├── .env.example              # API Key、Milvus 连接等配置模板
-├── config/
-│   └── settings.yaml         # 分块参数、检索 Top-k、模型名等
-├── static/                   # 前端页面（#8 交付）
+webrag/
+├── README.md                       # 项目总览
+├── pyproject.toml + uv.lock + .python-version   # 依赖与版本锁（uv 统一管理）
+├── .env.example                   # 密钥与连接信息模板（复制为 .env 填写）
+├── docker-compose.yml             # 一键部署编排（Milvus + Redis + MySQL + 应用）
+├── Dockerfile                     # 应用镜像（纯 CPU，uv sync --frozen）
+├── config/settings.yaml           # 环境无关的可调参数（分块/检索/生成/超时等）
 ├── src/webrag/
-│   ├── main.py               # FastAPI 入口（/ask、/health）
-│   ├── schemas/              # 请求/响应数据模型
-│   ├── crawler/              # ③ 搜索与抓取
-│   ├── parser/               # ④ 清洗与正文提取
-│   ├── chunker/              # ④ 切块策略
-│   ├── embedder/             # ⑤ BGE-M3 向量化
-│   ├── milvus_store/         # ⑥ Milvus collection 管理与写入
-│   ├── retriever/            # ⑦ 检索 + 重排
-│   └── llm/                  # ⑧ DeepSeek 调用 + Prompt 模板 + 引用解析
+│   ├── main.py                    # FastAPI 入口：/ask、/ask/stream、/health、/logs/stats
+│   ├── accounts.py                # 账户系统（/auth/*：注册/登录/会话）
+│   ├── chat_routes.py             # 聊天记录（/chat/*，MySQL 持久化）
+│   ├── schemas/                   # 请求/响应数据模型（契约落点）
+│   ├── crawler/                   # 搜索 API 适配层 + 抓取（限速/重试/robots/URL 去重）
+│   ├── parser/                    # HTML 清洗与正文提取（trafilatura）
+│   ├── chunker/                   # 切块（标题/段落感知 + 重叠 + 两级粒度可选）
+│   ├── query_rewriter/            # 查询预处理：意图 / 多路改写 / HyDE / 追问改写 / 时效锚定
+│   ├── embedder/                  # BGE-M3 向量化（dense + sparse）
+│   ├── milvus_store/              # Milvus collection 管理 + 混合检索封装
+│   ├── retriever/                 # 问答缓存 / 离线知识库 / 联网兜底 / 重排 / 缓存落库
+│   ├── llm/                       # DeepSeek 调用 + Prompt 模板 + 引用解析
+│   ├── hallucination_checker/     # 幻觉检测（逐句核验）
+│   ├── feedback_store/            # 在线反馈收集
+│   ├── logger/                    # 结构化日志（JSONL + 请求级指标，见 docs/logging.md）
+│   └── admin/                     # 管理后台（登录 / 离线知识入库 / 文档管理）
+├── static/                        # 前端：问答页 + 管理后台（原生 JS，无框架）
 ├── scripts/
-│   ├── init_milvus.py        # 建 collection、索引
-│   └── test_query.py         # 命令行单测一条问题
-├── tests/                    # 单元 / 集成测试
-├── eval/                     # 评测集与评测脚本
-└── docs/                     # 设计文档、接口文档
+│   ├── init_milvus.py             # 建库（幂等，webrag_qa）
+│   ├── init_admin.py              # 创建管理员账号
+│   └── test_query.py              # 命令行单测一条问题
+├── tests/                         # pytest 单测 + 集成测试（15 个测试文件）
+├── eval/                          # 评测集 qa_set.json + run_eval.py + reports/
+└── docs/                          # 设计 / 接口 / 部署 / 快速开始 / 日志 / 变更记录
 ```
 
-> 每个模块目录内含 README.md（如 `src/webrag/crawler/README.md`），写明该模块的职责、负责人、接口约定与验收标准。
+> `models/`（BGE-M3 / reranker，2GB+）与 `logs/`、`.env` 已被 .gitignore 排除，不入库；模型需自行下载放置（见 docs/quickstart.md）。
 
-## 4. 协作规范（Resilio Sync + 模块文件夹，无 Git）
+## 4. 快速开始
 
-> ⚡ 团队成员先看根目录 **TEAM_GUIDE.md**（30 秒速览），细节在本节。
+本地开发环境准备（详细命令见 [docs/quickstart.md](docs/quickstart.md)）：
 
-团队用 **Resilio Sync** 实时同步项目主文件夹（本目录）。成员**直接在同步夹内、只改动自己负责的模块目录**（§7 分工即目录边界），保存即同步到全队。
+```bash
+# 1. 拉取代码 + 同步环境（uv 自动装 Python 3.11 + 全部依赖，含 CPU 版 torch）
+git clone https://github.com/Derviol/webrag.git && cd webrag
+uv sync
 
-**目录边界（§7 分工映射）**
+# 2. 配置密钥：复制模板并填入 DeepSeek / 搜索 API Key
+cp .env.example .env
 
-| 成员 | 只动这些目录 |
-| --- | --- |
-| #2 爬虫（2 人） | src/webrag/crawler/ |
-| #3 清洗切块（2 人） | src/webrag/parser/、src/webrag/chunker/ |
-| #4 Embedding | src/webrag/embedder/ |
-| #5 向量库 | src/webrag/milvus_store/ |
-| #6 检索（2 人） | src/webrag/retriever/ |
-| #7 LLM | src/webrag/llm/ |
-| #8 后端/前端 | src/webrag/main.py、src/webrag/schemas/、static/ |
-| #9 测试评测 | tests/、eval/ |
-| #1 总负责 | 其余一切（docs/、config/、scripts/、pyproject 等） |
+# 3. 启动基础设施（Milvus + Redis + MySQL；可选 --scale init=0 跳过自动建库）
+docker compose up -d
 
-**共享文件 owner 制**（不属于任何单一模块；他人需改时先记 CHANGELOG / 与 owner 打招呼，由 owner 动手或确认）
+# 4. 初始化（幂等可重跑）：建问答缓存 collection；创建管理员账号
+uv run python scripts/init_milvus.py
+uv run python scripts/init_admin.py --username admin --password <你的密码>
 
-| 文件 | owner | 说明 |
-| --- | --- | --- |
-| src/webrag/main.py（/ask 组装） | #8 | 集成多模块输出 |
-| src/webrag/schemas/models.py | #8 维护 / 各模块提需求 | 契约落点，字段变更走 api.md §5 |
-| src/webrag/schemas/__init__.py | #8 | 与 models.py 同步 |
-| pyproject.toml + uv.lock | #1 独改 | 依赖变更统一收敛，防各人各加各的包 |
-| config/settings.yaml | #1 | 参数集中管理 |
-| docs/api.md | #1 定版 | 契约权威，变更人提需求 |
-| docs/CHANGELOG.md | 变更人自记 | 协作记录（无 Git 即历史） |
-| scripts/test_query.py | #1 | 联调脚本，牵动全链路 |
-
-**协作纪律**
-
-- 模块代码：在自己目录里随便改，保存即同步；**自测通过才算完成**（uv run pytest / ruff）；
-- 共享文件：只有 owner 能改；改动前确认无人正在编辑；
-- 半成品警示：保存即同步 = 未完成代码即刻全网可见，改完未自测前不要依赖别人的结果；
-- 冲突：两人同时改同一文件 → Resilio 生成 `xxx (conflicted copy).py`，协商保留一份、删除其余；
-- 备份：无版本历史，总负责每天下班对主文件夹做整体 zip 快照（至少保留 3 份），出问题用快照回滚。
-
-**忽略清单（Resilio 客户端 → 文件夹设置 → 忽略列表）**
-
-| 模式 | 原因 |
-| --- | --- |
-| `.venv/`、`__pycache__/`、`*.pyc` | 机器特定 / 缓存，同步即坏 |
-| `.reasonix/`、`.idea/`、`.vscode/` | 工具 / IDE 本机特定 |
-| `*.bak`、`*.orig`、`*.rej`、`Thumbs.db`、`desktop.ini`、`.DS_Store` | 备份 / 系统噪音 |
-
-**密钥（.env）**
-
-- 全量同步下 .env 会同步给所有成员（API Key 全队可见）；内部项目可接受则保持现状（总负责统一维护）；
-- 需保密时在忽略列表加 `.env`，成员各自复制 `.env.example` 填写。
-
-**模型分发**
-
-- BGE-M3（2GB+）首次由 #4 下载到 models/，Resilio 局域网分发给全队（省 10 次重复下载）；models/ 默认参与同步。
-
-**变更记录**
-
-- 影响多人协作的决策与接口变更在 `docs/CHANGELOG.md` 追加记录；
-- 契约/接口字段变更必须同步更新 api.md 与相关模块 README。
-
-## 5. Docker 部署（基础设施已落盘，应用容器 M4）
-
-**目标架构**：基础设施（Milvus + Redis）已由根目录 `docker-compose.yml` 编排；本机 Attu 2.x 与本地 uv 应用通过 `localhost:19530` 连接 Milvus；webrag-app 应用容器（Dockerfile）M4 完成，随 `docker compose up -d` 一键启动。
-
-```text
-本机 Attu (GUI) ─┐
-                 ├──> localhost:19530 ──> milvus-standalone (Docker)
-uv 应用 / scripts─┘                            │
-                                              ├─ etcd (元数据)
-                                              └─ minio (存储)
-uv 应用 ──> localhost:6379 ──> redis (Docker，缓存/限流)
+# 5. 启动服务
+uv run uvicorn src.webrag.main:app --reload
 ```
 
-- Milvus standalone 依赖 etcd（元数据）与 minio（存储），三者均由官方镜像提供，数据挂 named volume；
-- 本机 Attu 2.x 连接 `http://localhost:19530` 浏览 collection 与索引（详见 docs/deploy.md）；
-- webrag-app 应用容器（Dockerfile）M4 阶段加入编排。
+打开 http://localhost:8000 → 注册/登录 → 开始问答；管理后台 http://localhost:8000/admin/（管理员账号登录后可上传离线知识文档）。
 
-**服务编排**（根目录 `docker-compose.yml` 已落盘）：
+## 5. Docker 部署
 
-| 服务 | 镜像 | 作用 |
-| --- | --- | --- |
-| `etcd` | quay.io/coreos/etcd | Milvus 元数据存储 |
-| `minio` | minio/minio | 向量与日志数据持久化（挂 volume） |
-| `milvus` | milvusdb/milvus:v2.4.24（standalone 模式） | 向量数据库本体 |
-| `redis` | redis:7-alpine | 缓存（URL 去重 / 搜索缓存）与限流，挂 volume 持久化 |
-| `webrag-app` | 由本项目构建（M4 完成） | FastAPI 服务：爬虫、BGE-M3 嵌入、DeepSeek 调用 |
+`docker compose up -d` 一键启动全部服务（首次构建应用镜像约 5–15 分钟），详见 [docs/deploy.md](docs/deploy.md)：
 
-**部署步骤**（详细命令见 docs/deploy.md）：
+| 服务 | 作用 |
+| --- | --- |
+| `etcd` / `minio` | Milvus 元数据 / 存储依赖 |
+| `milvus` | 向量数据库（standalone，端口 19530；本机 Attu 2.x 可视化连接） |
+| `redis` | URL 去重 / 登录限流（容器内走服务名 `redis:6379`） |
+| `mysql` | 账户 / 聊天记录 / 后台文档（utf8mb4，named volume 持久化） |
+| `webrag-app` | FastAPI 应用 + 前端（端口 8000，`restart: unless-stopped`） |
+| `init` | 一次性建库任务（幂等，milvus healthy 后自动执行，Exited 0 即成功） |
 
-1. 项目根目录执行 `docker compose up -d` —— 一键启动 Milvus（+etcd/minio）、Redis、webrag-app 应用容器，并自动建库（init 一次性任务，详见 docs/deploy.md）；
-2. 本机 Attu 连接 `http://localhost:19530` 验证；`curl http://localhost:8000/health` 应显示 milvus: true；
-3. 打开 http://localhost:8000 开始问答。
+验收：`curl http://localhost:8000/health` → `{"status":"ok","milvus":true,"embed_model":true}`。
 
-## 6. 快速开始（规划）
+## 6. 测试与质量
 
-本地开发环境准备（详细命令见 docs/quickstart.md）：
+```bash
+uv run pytest          # 全部测试（单测 + 集成，网络请求已 mock）
+uv run ruff check      # lint（src + tests + scripts + eval 全绿）
+uv run python scripts/test_query.py "你的问题"   # 命令行冒烟一条问题
+uv run python eval/run_eval.py                   # 评测（Recall@k / MRR，见 eval/README.md）
+```
 
-1. 通过 Resilio 同步主文件夹到本机，执行 `uv sync`（自动下载 Python 3.11、创建 .venv 并安装全部依赖，含 CPU 版 torch）；
-2. 复制 `.env.example` 为 `.env`，填入 DeepSeek、搜索服务 API Key 与 Milvus 连接地址；
-3. `docker compose up -d` 启动 Milvus+Redis，再运行初始化脚本创建 Milvus collection 与索引；
-4. 启动 FastAPI 服务，调用 `/ask` 接口提交问题，即可获得带来源标注的回答。
+- 测试清单见 [tests/README.md](tests/README.md)；改动后本地 `uv run pytest` + `ruff` 全绿再提交；
+- 结构化日志事件 schema 见 [docs/logging.md](docs/logging.md)。
 
-部署环境无需本地安装依赖，直接用 Docker 一键启动（见 §5）。
+## 7. 开发与维护约定（单人 + Git）
 
-## 7. 团队分工（11 人建议）
+- **分支**：`main` 为稳定版，功能开发在 `dev` 分支，合并后推送 GitHub（`origin`）；
+- **提交**：`chore` / `feat` / `fix` / `docs` 前缀的简短提交信息；影响接口 / 行为变更的记录追加到 [docs/CHANGELOG.md](docs/CHANGELOG.md)；
+- **环境**：依赖变更改 `pyproject.toml` → `uv lock` 更新 → 提交 pyproject + uv.lock（`uv.lock` 是唯一版本真相，禁手改）；
+- **密钥**：一律走 `.env`（gitignore），绝不含在代码 / settings.yaml / 提交中；
+- **模型**：BGE-M3 与 reranker 不入库，换机器时下载放置到 `models/`（路径见 .env.example）。
 
-**总负责**：任务拆解、进度跟进、架构与接口契约定版、config 维护、Docker 编排（docs/deploy.md）、每日按 §8 出口标准验收。
+## 8. 文档索引
 
-| # | 角色 | 人数 | 职责 | 主要交付物 | 对应目录 | 详情 |
-| --- | --- | --- | --- | --- | --- | --- |
-| 2 | 爬虫开发 | 2 | 搜索 API 对接、抓取调度、反爬与限速、robots 合规、URL 去重（Redis） | 采集模块、搜索适配层 | src/webrag/crawler/ |  |
-| 3 | 数据清洗 / 切块 | 2 | HTML 清洗、正文提取、切块策略调优（A 清洗 / B 切块） | parser + chunker 模块、分块评测 | src/webrag/parser/、chunker/ |  |
-| 4 | Embedding 服务 | 1 | BGE-M3 部署与调用封装、向量批量生成 | embedder 模块、批处理脚本 | src/webrag/embedder/ |  |
-| 5 | 向量库开发 | 1 | Milvus collection 设计、索引与写入、元数据管理 | milvus_store 模块、建库脚本 | src/webrag/milvus_store/、scripts/ |  |
-| 6 | 检索链路 | 2 | 问答缓存检索、联网兜底检索、重排、相关度调优、缓存阈值（qa_min_score）调优 | retriever 模块、检索评测报告 | src/webrag/retriever/ |  |
-| 7 | LLM 接入 | 1 | DeepSeek 调用封装、Prompt 设计、引用标注与解析 | llm 模块、Prompt 版本库 | src/webrag/llm/ |  |
-| 8 | 后端 API / 前端 | 1 | FastAPI 接口、引用渲染、Web 页面（前端规格见 static/README.md） | main.py、前端页面 | src/webrag/、schemas/、static/ |  |
-| 9 | 测试 / 评测 / 汇报 | 1 | 评测集建设、指标计算、端到端回归 | eval 目录、评测报告 | tests/、eval/ |  |
+| 文档 | 内容 |
+| --- | --- |
+| [docs/architecture.md](docs/architecture.md) | 架构设计（链路 / 数据流 / 时延预算 / 关键决策） |
+| [docs/api.md](docs/api.md) | 接口契约（权威：/ask、/ask/stream、/admin、/auth、/chat） |
+| [docs/deploy.md](docs/deploy.md) | Docker 部署与运维（compose / 管理后台 / 常见问题） |
+| [docs/quickstart.md](docs/quickstart.md) | 本地开发快速开始（环境 / 命令 / 端口速查） |
+| [docs/logging.md](docs/logging.md) | 结构化日志事件 schema（JSONL 指标） |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | 变更记录（开发全过程的决策与优化） |
+| `src/webrag/*/README.md` | 各模块职责 / 接口约定 / 验收标准 |
 
-> 角色编号与各模块 README 的负责人标注一致（#1 = 总负责/架构）。**并行关键路径**：①②③④⑤ 为链路前置，⑥⑦⑧ 依赖前置完成后联调，⑨ 全程介入；任务吃紧时从「检索链路」或「前后端」抽人支援。
-
-## 8. 里程碑
-
-| 天 | 内容 | 出口标准 |
-| --- | --- | --- |
-| D1 | 骨架 + 搜索/爬虫 + 清洗切块 + Milvus schema 对齐（dense+sparse）+ BGE-M3 下载 | 单条 URL 产出规范 Chunk；Milvus 建库成功；模型就绪 |
-| D2 | 查询分析 + dense/sparse 嵌入 + 混合检索 + DeepSeek 生成，主链路跑通；预建库 ingest 脚本 | 一条问题能返回基于网页内容的回答（预建库或临时抓取均可） |
-| D3 | 重排接入 + 引用标注校验 + Web 页面 + 知识库扩充 + 联调 | /ask 返回 answer + sources，前端可点击溯源 |
-| D4 | 测试 + 评测 + Docker 部署 + 文档归档 | `docker compose up -d` 一键启动；README/api/architecture 齐全 |
-
-> 全量功能（查询分析、dense+sparse 双向量、重排、预建库 + 临时库双策略）均在交付范围内，按核心路径优先排期，详见 docs/architecture.md。
-
-## 9. 待确认事项
-
-**已确定（不阻塞开发）**
-
-- 检索策略：问答缓存优先——向量库存「问题 → 摘要 + 来源」，命中直接复用（未命中走联网兜底）
-- 向量与检索：BGE-M3 dense + sparse 混合检索 + bge-reranker 重排
-- 基础设施：Milvus standalone + Redis 由 Docker Compose 一同部署（§5）
-- 协作与部署：Resilio Sync 同步协作（§4）、Docker Compose（§5）
-
-**待确认**
-
-- [ ] 项目正式名称（当前为占位名 WebRAG）
-- [ ] 搜索引擎 API 选型（预算 / 免费额度；代码留适配层）
-- [ ] 预建知识库首批主题范围（D2 前确定，供 ingest 脚本跑数据）
+> 项目开发于 2026-08 初至中旬（见 docs/CHANGELOG.md），单人全栈完成：从基础设施编排、检索链路（缓存优先 + 联网兜底）到管理后台、多轮对话与评测闭环。
